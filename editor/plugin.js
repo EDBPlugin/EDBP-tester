@@ -46,7 +46,14 @@ export class PluginManager {
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), timeout);
             try {
-                const response = await fetchFn(url, { ...options, signal: controller.signal });
+                const fetchOptions = { ...options, signal: controller.signal };
+                if (this.githubToken && url.includes('api.github.com')) {
+                    fetchOptions.headers = {
+                        ...fetchOptions.headers,
+                        'Authorization': `token ${this.githubToken}`
+                    };
+                }
+                const response = await fetchFn(url, fetchOptions);
                 clearTimeout(id);
                 if (response.ok) return response;
                 // レート制限(403)時はリトライしても無意味なので即座にエラー
@@ -100,6 +107,9 @@ export class PluginManager {
         this.githubMarketplaceFallbackLogShown = false;
         this.githubMarketplaceSearchPromise = null;
         this.githubApiCooldownNoticeShown = false;
+
+        this.githubToken = this.decodeSecret(localStorage.getItem('edbb_github_token')) || '';
+        this.applyHoneypots();
         const persistedRateLimitUntil = Number(localStorage.getItem(EDBB_GITHUB_MARKETPLACE_RATE_LIMIT_UNTIL_KEY) || '0');
         if (Number.isFinite(persistedRateLimitUntil) && persistedRateLimitUntil > Date.now()) {
             this.githubMarketplaceRateLimitedUntil = persistedRateLimitUntil;
@@ -200,6 +210,9 @@ export class PluginManager {
 
     async init() {
         console.log('PluginManager initializing...');
+
+        // 自動削除機能：ピン留めされていないプラグインを削除する
+        this.purgeUnpinnedPlugins();
 
         // 公認プラグインリストを配列形式で取得 (EDBP-API の plugins.json)
         try {
@@ -556,7 +569,7 @@ export class PluginManager {
         }
 
         const isNewVersion = parsedMinAppVersion && (
-            parsedMinAppVersion.major > 1 || 
+            parsedMinAppVersion.major > 1 ||
             (parsedMinAppVersion.major === 1 && parsedMinAppVersion.minor >= 1)
         );
 
@@ -1462,6 +1475,44 @@ export class PluginManager {
         localStorage.setItem('edbb_installed_plugins', JSON.stringify(this.installedPlugins));
     }
 
+    // ピン留め機能
+    togglePin(id) {
+        const plugin = this.installedPlugins[id];
+        if (!plugin) return;
+        plugin.isPinned = !plugin.isPinned;
+        this.saveInstalledPlugins();
+        return plugin.isPinned;
+    }
+
+    isPinned(id) {
+        return !!this.installedPlugins[id]?.isPinned;
+    }
+
+    purgeUnpinnedPlugins() {
+        console.log('Purging unpinned plugins...');
+        let modified = false;
+        Object.keys(this.installedPlugins).forEach(id => {
+            if (!this.installedPlugins[id].isPinned) {
+                // 有効化されている場合はアンロード処理
+                if (this.enabledPlugins.has(id)) {
+                    const activePlugin = this.plugins.get(id);
+                    if (activePlugin && typeof activePlugin.onunload === 'function') {
+                        activePlugin.onunload();
+                    }
+                    this.plugins.delete(id);
+                    this.enabledPlugins.delete(id);
+                }
+                delete this.installedPlugins[id];
+                modified = true;
+            }
+        });
+
+        if (modified) {
+            this.saveInstalledPlugins();
+            this.saveState();
+        }
+    }
+
     getRegistry() {
         return Object.values(this.installedPlugins).map(plugin => {
             // インストール済みデータから信頼レベルを再計算して付与（リスト更新反映のため）
@@ -1593,5 +1644,112 @@ export class PluginManager {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+    // ハニーポット（監視用ダミー情報）をブラウザ環境に注入
+    applyHoneypots() {
+        if (typeof window === 'undefined') return;
+
+        const baitId = this.decodeSecret(localStorage.getItem('edbb_bait_id')) || '';
+        const baitPass = this.decodeSecret(localStorage.getItem('edbb_bait_pass')) || '';
+        const baitToken = this.decodeSecret(localStorage.getItem('edbb_bait_github_token')) || '';
+
+        // LocalStorageへの注入 (一般的なキー名を狙う)
+        if (baitId) localStorage.setItem('user_id', baitId);
+        if (baitPass) localStorage.setItem('password', baitPass);
+        if (baitToken) {
+            localStorage.setItem('github_token', baitToken);
+            localStorage.setItem('gh_token', baitToken);
+        }
+
+        // Global Objectへの注入
+        window.CONFIG_TEST_SECRETS = {
+            API_KEY: baitToken || 'dummy_api_key',
+            USER: baitId,
+            PASS: baitPass
+        };
+
+        // 監視ロガー (簡易版)
+        const originalGetItem = localStorage.getItem.bind(localStorage);
+        localStorage.getItem = (key) => {
+            const val = originalGetItem(key);
+            const baitKeys = ['user_id', 'password', 'github_token', 'gh_token'];
+            if (baitKeys.includes(key) && val) {
+                console.warn(`[SECURITY INSPECTOR] Plugin accessed honeypot key: ${key}`);
+            }
+            return val;
+        };
+    }
+
+    async submitToGithubList(listType, fullName, reason = '') {
+        if (!this.githubToken) throw new Error('GitHubトークンが設定されていません。');
+
+        const config = {
+            certified: {
+                repo: 'EDBPlugin/EDBP-API',
+                path: 'plugins.json'
+            },
+            blacklist: {
+                repo: 'EDBPlugin/Blacklist',
+                path: 'plugins.json'
+            }
+        }[listType];
+
+        if (!config) throw new Error('無効なリストタイプです。');
+
+        const apiUrl = `https://api.github.com/repos/${config.repo}/contents/${config.path}`;
+
+        // 1. 現在の内容とSHAを取得
+        const getRes = await this.fetchWithRetry(apiUrl);
+        if (!getRes.ok) throw new Error(`コンテンツの取得に失敗しました: ${getRes.status}`);
+        const fileInfo = await getRes.json();
+        const currentContent = JSON.parse(decodeURIComponent(escape(atob(fileInfo.content))));
+        const sha = fileInfo.sha;
+
+        // 2. 重複チェックと更新
+        let updatedContent = [...currentContent];
+        if (listType === 'certified') {
+            if (updatedContent.includes(fullName)) throw new Error('既に公認リストに含まれています。');
+            updatedContent.push(fullName);
+            // ソートしておく
+            updatedContent.sort();
+        } else {
+            if (updatedContent.some(item => item.url === fullName)) throw new Error('既にブラックリストに含まれています。');
+            updatedContent.push({ url: fullName, reason: reason || 'セキュリティ上の懸念' });
+        }
+
+        // 3. 送信
+        const putRes = await this.fetchWithRetry(apiUrl, {
+            method: 'PUT',
+            body: JSON.stringify({
+                message: `chore: Add ${fullName} to ${listType} list via Inspector`,
+                content: btoa(unescape(encodeURIComponent(JSON.stringify(updatedContent, null, 2)))),
+                sha: sha
+            })
+        });
+
+        if (!putRes.ok) {
+            const err = await putRes.json();
+            throw new Error(`GitHubへの書き込みに失敗しました: ${err.message}`);
+        }
+
+        return true;
+    }
+
+    encodeSecret(val) {
+        if (!val) return '';
+        try {
+            return btoa(unescape(encodeURIComponent(val)));
+        } catch (e) {
+            return val;
+        }
+    }
+
+    decodeSecret(val) {
+        if (!val) return '';
+        try {
+            return decodeURIComponent(escape(atob(val)));
+        } catch (e) {
+            return val;
+        }
     }
 }

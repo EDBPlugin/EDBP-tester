@@ -40,8 +40,8 @@
         crossorigin="anonymous"></script>
     <meta charset="UTF-8">
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Easy Discord Bot Builder" />
-    <meta property="og:title" content="Easy Discord Bot Builder" />
+    <meta property="og:site_name" content="EDBP Plugin Tester" />
+    <meta property="og:title" content="EDBP Plugin Tester" />
     <meta property="og:description" content="DiscordのBotをノーコードで。" />
     <meta property="og:url" content="https://himais0giiiin.com//" />
     <meta property="og:image" content="https://himais0giiiin.com/static/ogp.jpg" />
@@ -55,7 +55,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 
-    <title>Easy Discord Bot Builder</title> <!-- nは更新したときに見やすくするものです -->
+    <title>EDBP Plugin Tester</title> <!-- nは更新したときに見やすくするものです -->
 
     <link rel="icon" type="image/svg+xml" href="../static/icon.svg">
 
@@ -132,8 +132,8 @@
 
 
     <link rel="stylesheet" href="style.css">
-    <meta property="og:title" content="Easy Discord Bot Builder (EDBB)">
-    <meta property="og:site_name" content="Easy Discord Bot Builder(EDBB)">
+    <meta property="og:title" content="EDBP Plugin Tester">
+    <meta property="og:site_name" content="EDBP Plugin Tester">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://himais0giiiin.com/beta/">
     <meta property="og:description" content="ブラウザ上でブロックを組み合わせて、誰でも簡単に Discord Bot を作成できるビジュアルプログラミングツール。全て無料。">
@@ -176,7 +176,7 @@
             <div class="flex flex-col">
                 <h1
                     class="text-xl font-bold text-slate-900 dark:text-white leading-tight tracking-tight flex items-center gap-3">
-                    Easy Discord Bot Builder
+                    EDBP Plugin Tester
                     <!-- <span class="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-mono font-bold">BETA</span> -->
                 </h1>
                 <p class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
@@ -1026,11 +1026,16 @@
                         <i data-lucide="puzzle" class="w-5 h-5"></i>
                     </div>
                     <div>
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-white">コミュニティプラグイン</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">EDBPの機能を拡張するプラグインを管理します</p>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white">プラグイン検査ツール</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">開発中のプラグインをZIPファイルからインストールして検証できます</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-1">
+                    <button id="pluginSecurityLabBtn"
+                        class="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:text-slate-500 dark:hover:text-rose-300 dark:hover:bg-rose-900/20 transition-colors"
+                        aria-label="Security Lab" title="Security Lab / Honeypot">
+                        <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                    </button>
                     <button id="pluginHeaderSettingsBtn"
                         class="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:text-slate-500 dark:hover:text-indigo-300 dark:hover:bg-indigo-900/20 transition-colors"
                         aria-label="Settings" title="Settings">
@@ -1048,7 +1053,7 @@
                 <div
                     class="w-80 border-r border-slate-100 dark:border-slate-800 flex flex-col bg-slate-50/50 dark:bg-slate-950/20">
                     <div class="p-4 border-b border-slate-100 dark:border-slate-800">
-                        <div class="flex items-center justify-between">
+                        <div class="hidden items-center justify-between">
                             <span
                                 class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">インストール済みのみ表示</span>
                             <button data-filter-installed aria-pressed="false"
@@ -1064,10 +1069,30 @@
                             <span>ZIPからインストール</span>
                         </button>
                         <button id="pluginBulkShareBtn"
-                            class="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                            class="hidden w-full mt-2 items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
                             <i data-lucide="share-2" class="w-4 h-4"></i>
                             <span>有効なプラグインを共有</span>
                         </button>
+
+                        <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">審査クイックアクセス</p>
+                            <div class="space-y-2">
+                                <div class="flex gap-2">
+                                    <input type="text" id="githubRepoInput" placeholder="username/repo"
+                                        class="flex-1 px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    <button id="githubFetchBtn"
+                                        class="px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">取得</button>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button id="reviewCertifiedBtn"
+                                        class="px-2 py-1.5 text-[10px] font-bold bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50 rounded-lg hover:bg-green-100 dark:hover:bg-green-800/30 transition-all text-center">公認リスト</button>
+                                    <button id="reviewBlacklistBtn"
+                                        class="px-2 py-1.5 text-[10px] font-bold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 rounded-lg hover:bg-red-100 dark:hover:bg-red-800/30 transition-all text-center">ブラックリスト</button>
+                                </div>
+                                <button id="reviewClearBtn"
+                                    class="w-full px-2 py-1.5 text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all text-center italic">審査（URL）をクリアして何もしない</button>
+                            </div>
+                        </div>
                     </div>
                     <div id="pluginList" class="flex-1 overflow-y-auto p-3 space-y-2">
                         <!-- プラグインアイテムがここに動的に追加される -->
@@ -1372,6 +1397,58 @@
             }
         })();
     </script>
+    <div id="pluginSecurityLabModal"
+        class="modal-backdrop hidden fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+        aria-hidden="true">
+        <div
+            class="flex flex-col w-full max-w-lg overflow-hidden rounded-2xl shadow-2xl bg-white dark:bg-slate-900 modal-content border border-rose-200 dark:border-rose-900/50 ring-1 ring-black/5">
+            <div
+                class="flex items-center justify-between px-6 py-4 border-b border-rose-100 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-900/10">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
+                        <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white">Security Lab & Honeypot</h2>
+                        <p class="text-xs text-rose-600/70 dark:text-rose-400/70">プラグインの挙動をテストするための設定</p>
+                    </div>
+                </div>
+                <button id="pluginSecurityLabClose"
+                    class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-100/80 dark:hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="flex flex-col gap-5 p-6 bg-white dark:bg-slate-900 overflow-y-auto">
+                <p class="text-[10px] font-bold text-rose-500/80 uppercase tracking-widest">検査用ログイン / ハニーポット</p>
+
+                <!-- Bait ID/Pass -->
+                <div>
+                    <label
+                        class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">ID
+                        / パスワード</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="password" id="baitIdInput" placeholder="ID"
+                            class="px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-rose-500 outline-none">
+                        <input type="password" id="baitPassInput" placeholder="Password"
+                            class="px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-rose-500 outline-none">
+                    </div>
+                </div>
+
+                <div
+                    class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 text-[10px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                    <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                    管理者ID・パスワードを入力すると、直接リストを更新できる権限が有効になります。また、これらはプラグインが情報を盗もうとしないかの「おとり」としても機能します。
+                </div>
+            </div>
+            <div
+                class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 dark:bg-slate-950/20 border-t border-slate-100 dark:border-slate-800">
+                <button id="pluginSecurityLabSaveBtn" type="button"
+                    class="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-[0.98]">
+                    <span>設定を保存</span>
+                </button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

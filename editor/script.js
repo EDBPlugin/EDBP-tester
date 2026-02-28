@@ -2729,6 +2729,7 @@ const initializeApp = async () => {
 
   const pluginUI = new PluginUI(pluginManager);
   pluginUIRef = pluginUI;
+  pluginUI.init();
   pluginManager.onPluginsSuggested((entries) => {
     pluginUI.handleBulkInstall(entries.join(','));
   });

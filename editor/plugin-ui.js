@@ -72,6 +72,11 @@ export class PluginUI {
         this.deleteAgreementModal = null;
         this.dangerousInstallModal = null;
 
+        this.securityLabModal = document.getElementById('pluginSecurityLabModal');
+        this.securityLabBtn = document.getElementById('pluginSecurityLabBtn');
+        this.securityLabCloseBtn = document.getElementById('pluginSecurityLabClose');
+        this.securityLabSaveBtn = document.getElementById('pluginSecurityLabSaveBtn');
+
         this.init();
     }
 
@@ -363,7 +368,7 @@ export class PluginUI {
                 if (!file) return;
                 try {
                     const manifest = await this.pluginManager.peekManifestFromZip(file);
-                    
+
                     // 危険なプラグインのチェック
                     const level = manifest.trustLevel?.level ?? manifest.trustLevel;
                     if (level === 'danger') {
@@ -451,6 +456,141 @@ export class PluginUI {
                 });
             });
         }
+
+        // GitHubから直接取得する機能の初期化
+        const fetchBtn = document.getElementById('githubFetchBtn');
+        const repoInput = document.getElementById('githubRepoInput');
+        if (fetchBtn && repoInput) {
+            const handleFetch = async () => {
+                const repoPath = repoInput.value.trim();
+                if (!repoPath) return;
+
+                // 審査モードのUI調整
+                const modalTitle = this.bulkInstallModal.querySelector('h2');
+                if (modalTitle) modalTitle.textContent = 'プラグインの審査・検証';
+                const modalDesc = this.bulkInstallModal.querySelector('p');
+                if (modalDesc) modalDesc.textContent = '指定されたGitHubプラグインの内容を確認し、インストールして検証できます。';
+
+                await this.handleBulkInstall(repoPath);
+                repoInput.value = '';
+            };
+
+            fetchBtn.addEventListener('click', handleFetch);
+            repoInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') handleFetch();
+            });
+        }
+
+        // クイックアクセスボタンの初期化
+        const certifiedBtn = document.getElementById('reviewCertifiedBtn');
+        const blacklistBtn = document.getElementById('reviewBlacklistBtn');
+        const clearBtn = document.getElementById('reviewClearBtn');
+
+        if (certifiedBtn) {
+            certifiedBtn.addEventListener('click', async () => {
+                const plugins = this.pluginManager.certifiedPlugins || [];
+                if (plugins.length > 0) {
+                    // 審査モードのUI調整
+                    const modalTitle = this.bulkInstallModal.querySelector('h2');
+                    if (modalTitle) modalTitle.textContent = '公認プラグインの一括審査';
+                    const modalDesc = this.bulkInstallModal.querySelector('p');
+                    if (modalDesc) modalDesc.textContent = 'EDBP公認のプラグインリストを確認し、インストールして検証できます。';
+
+                    await this.handleBulkInstall(plugins.join(','));
+                } else {
+                    this.showSideError('公認リストが空か、読み込み中です。');
+                }
+            });
+        }
+
+        if (blacklistBtn) {
+            blacklistBtn.addEventListener('click', async () => {
+                const plugins = this.pluginManager.blacklistedPlugins || [];
+                if (plugins.length > 0) {
+                    // 審査モードのUI調整
+                    const modalTitle = this.bulkInstallModal.querySelector('h2');
+                    if (modalTitle) modalTitle.textContent = 'ブラックリストの審査';
+                    const modalDesc = this.bulkInstallModal.querySelector('p');
+                    if (modalDesc) modalDesc.textContent = '問題が報告されているプラグインの一覧を確認できます。インストールには注意してください。';
+
+                    await this.handleBulkInstall(plugins.join(','));
+                } else {
+                    this.showSideError('ブラックリストが空か、読み込み中です。');
+                }
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                // URLから審査用パスやパラメータを削除
+                window.history.replaceState({}, '', window.location.origin + window.location.pathname);
+                // 審査中であればモーダルを閉じる
+                this.closeBulkInstall();
+                this.showSideToast('審査モードをクリアしました。');
+            });
+        }
+
+        this.initSecurityLab();
+    }
+
+    initSecurityLab() {
+        if (!this.securityLabModal) return;
+
+        this.securityLabBtn?.addEventListener('click', () => {
+            const hasBaitId = !!localStorage.getItem('edbb_bait_id');
+            const hasBaitPass = !!localStorage.getItem('edbb_bait_pass');
+
+            const idInput = document.getElementById('baitIdInput');
+            const passInput = document.getElementById('baitPassInput');
+
+            if (idInput) {
+                idInput.value = '';
+                idInput.placeholder = hasBaitId ? '******** (保存済み)' : 'ID';
+                idInput.type = 'password';
+            }
+            if (passInput) {
+                passInput.value = '';
+                passInput.placeholder = hasBaitPass ? '******** (保存済み)' : 'Password';
+                passInput.type = 'password';
+            }
+
+            this.openSecurityLab();
+        });
+
+        this.securityLabCloseBtn?.addEventListener('click', () => this.closeSecurityLab());
+        this.securityLabSaveBtn?.addEventListener('click', () => {
+            const baitId = document.getElementById('baitIdInput')?.value.trim();
+            const baitPass = document.getElementById('baitPassInput')?.value.trim();
+
+            if (baitId) {
+                localStorage.setItem('edbb_bait_id', this.pluginManager.encodeSecret(baitId));
+            }
+            if (baitPass) {
+                localStorage.setItem('edbb_bait_pass', this.pluginManager.encodeSecret(baitPass));
+            }
+
+            this.pluginManager.applyHoneypots();
+
+            this.showSideSuccess('ログイン情報を更新しました。');
+            this.closeSecurityLab();
+        });
+    }
+
+    openSecurityLab() {
+        if (!this.securityLabModal) return;
+        this.securityLabModal.classList.remove('hidden');
+        this.securityLabModal.classList.add('flex');
+        void this.securityLabModal.offsetWidth;
+        this.securityLabModal.classList.add('show-modal');
+    }
+
+    closeSecurityLab() {
+        if (!this.securityLabModal) return;
+        this.securityLabModal.classList.remove('show-modal');
+        setTimeout(() => {
+            this.securityLabModal.classList.add('hidden');
+            this.securityLabModal.classList.remove('flex');
+        }, 300);
     }
 
     initSettingsModal() {
@@ -524,7 +664,7 @@ export class PluginUI {
     getDefaultPluginFeatureToggles() {
         return {
             blockSearch: false,
-            zipInstall: false,
+            zipInstall: true,
             darkModeButton: false
         };
     }
@@ -566,7 +706,7 @@ export class PluginUI {
 
         const installBtn = document.getElementById('pluginInstallBtn');
         if (installBtn) {
-            installBtn.style.display = toggles.zipInstall ? '' : 'none';
+            installBtn.style.display = ''; // プラグイン検査ツールなので常に表示
         }
 
         const themeToggle = document.getElementById('themeToggle');
@@ -726,11 +866,41 @@ export class PluginUI {
     }
 
     async handleUrlParams() {
+        const path = window.location.pathname;
         const params = new URLSearchParams(window.location.search);
 
-        // パラメータの取得（単数・複数どちらも一括インストールのUIで処理する）
+        // 1. パスによるチェック (/editor/username/repo または /editor/#username/repo)
+        let subPath = '';
+        const editorPathPrefix = '/editor/';
+
+        if (path.includes(editorPathPrefix)) {
+            const parts = path.split(editorPathPrefix);
+            subPath = parts[parts.length - 1].replace(/\/$/, '');
+        }
+
+        // ハッシュ形式のフォールバック (e.g., /editor/#himais0giiiin/secure-token-setting)
+        // サーバーが404を返す環境（ローカルなど）での確実な解決策
+        if (!subPath && window.location.hash) {
+            subPath = window.location.hash.replace(/^#\/?/, '');
+        }
+
+        if (subPath && subPath !== 'index.html' && !subPath.includes('.') && subPath.split('/').filter(Boolean).length === 2) {
+            const repoPath = subPath.split('/').filter(Boolean).join('/');
+
+            // 審査モードのUI調整
+            const modalTitle = this.bulkInstallModal.querySelector('h2');
+            if (modalTitle) modalTitle.textContent = 'プラグインの審査・検証';
+            const modalDesc = this.bulkInstallModal.querySelector('p');
+            if (modalDesc) modalDesc.textContent = '指定されたGitHubプラグインの内容を確認し、インストールして検証できます。';
+
+            await this.handleBulkInstall(repoPath);
+            return;
+        }
+
+        // 2. パラメータの取得（単数・複数どちらも一括インストールのUIで処理する）
         const single = params.get('install-plugin');
         const multiple = params.get('install-plugins');
+        const repoParam = params.get('repo') || params.get('r');
 
         if (single) {
             this.clearUrlParam('install-plugin');
@@ -738,6 +908,17 @@ export class PluginUI {
         } else if (multiple) {
             this.clearUrlParam('install-plugins');
             await this.handleBulkInstall(multiple);
+        } else if (repoParam) {
+            this.clearUrlParam('repo');
+            this.clearUrlParam('r');
+
+            // 審査モードのUI調整
+            const modalTitle = this.bulkInstallModal.querySelector('h2');
+            if (modalTitle) modalTitle.textContent = 'プラグインの審査・検証';
+            const modalDesc = this.bulkInstallModal.querySelector('p');
+            if (modalDesc) modalDesc.textContent = '指定されたGitHubプラグインの内容を確認し、インストールして検証できます。';
+
+            await this.handleBulkInstall(repoParam);
         }
     }
 
@@ -822,7 +1003,7 @@ export class PluginUI {
                     let level = pluginData?.trustLevel?.level ?? pluginData?.trustLevel;
                     let trustReason = pluginData?.trustLevel?.reason;
                     let pName = pluginData?.name || info.fullName;
-                    
+
                     if (!level) {
                         try {
                             const manifestUrl = `https://raw.githubusercontent.com/${info.fullName}/${info.branch || 'main'}/manifest.json`;
@@ -837,7 +1018,7 @@ export class PluginUI {
                                 trustReason = fetchedTrust?.reason;
                                 pName = fetchedManifest.name || pName;
                             }
-                        } catch(e) {
+                        } catch (e) {
                             console.warn(`Failed to fetch manifest for ${info.fullName}:`, e);
                         }
                     }
@@ -1523,7 +1704,8 @@ export class PluginUI {
         }
 
         // 2. GitHub Marketplace (トピック表示)
-        if (!this.isOnlyInstalled) {
+        // インストール機能を失わせるため無効化
+        if (false && !this.isOnlyInstalled) {
             const header = document.createElement('div');
             header.className = 'px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider mt-4 flex justify-between items-center';
             header.innerHTML = '<span>注目のコミュニティプラグイン (GitHub Topic)</span><span class="animate-pulse">GitHubから取得中...</span>';
@@ -1655,8 +1837,15 @@ export class PluginUI {
                         <div class="font-bold text-sm text-slate-900 dark:text-white flex flex-wrap items-center gap-y-1">
                             <span class="break-words">${plugin.name}</span>${trustBadge}
                         </div>
-                        ${isEnabled ? '<div class="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 ml-1 shrink-0"></div>' : ''}
-                        ${!isInstalled ? '<i data-lucide="download-cloud" class="w-3.5 h-3.5 text-slate-300 ml-1 shrink-0"></i>' : ''}
+                        <div class="flex items-center gap-1.5 ml-auto shrink-0">
+                            ${isInstalled ? `
+                                <button data-pin-id="${plugin.id}" class="p-1 rounded-md transition-colors ${this.pluginManager.isPinned(plugin.id) ? 'text-orange-500 bg-orange-100/50 dark:bg-orange-900/40' : 'text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}" title="${this.pluginManager.isPinned(plugin.id) ? 'ピン留め解除' : 'ピン留めして保存'}">
+                                    <i data-lucide="pin" class="w-3.5 h-3.5 ${this.pluginManager.isPinned(plugin.id) ? '' : 'opacity-40'}"></i>
+                                </button>
+                            ` : ''}
+                            ${isEnabled ? '<div class="w-2 h-2 rounded-full bg-indigo-500"></div>' : ''}
+                            ${!isInstalled ? '<i data-lucide="download-cloud" class="w-3.5 h-3.5 text-slate-300"></i>' : ''}
+                        </div>
                     </div>
                     <div class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">開発者: <span data-plugin-author>${this.escapeHtml(String(plugin.author || ''))}</span></div>
                 </div>
@@ -1682,6 +1871,16 @@ export class PluginUI {
                 this.showGitHubDetail(plugin);
             }
         });
+
+        const pinBtn = item.querySelector('[data-pin-id]');
+        if (pinBtn) {
+            pinBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.pluginManager.togglePin(plugin.id);
+                this.renderMarketplace();
+            });
+        }
+
         this.pluginList.appendChild(item);
         if (isInstalled) {
             void this.refreshInstalledUpdateBadge(plugin, item, pluginKey);
@@ -1793,8 +1992,8 @@ export class PluginUI {
             const title = updateContext?.branchMissing
                 ? `branch missing: ${updateContext?.targetRef || 'unknown'}`
                 : updateContext?.installChannel === 'branch'
-                ? `branch: ${updateContext.targetRef} / latest: ${String(updateContext?.latestCommitSha || '').slice(0, 7) || 'unknown'}`
-                : `release: ${String(plugin?.installReleaseTag || plugin?.installRef || 'unknown')} -> ${updateContext?.targetRef || 'unknown'}`;
+                    ? `branch: ${updateContext.targetRef} / latest: ${String(updateContext?.latestCommitSha || '').slice(0, 7) || 'unknown'}`
+                    : `release: ${String(plugin?.installReleaseTag || plugin?.installRef || 'unknown')} -> ${updateContext?.targetRef || 'unknown'}`;
             const status = {
                 hasUpdate,
                 title: latestVersion ? `current: ${plugin.version} / latest: ${latestVersion}` : title,
@@ -1996,7 +2195,10 @@ export class PluginUI {
                     ${showReadmeAd ? this.getReadmeAdHtml() : ''}
                 </div>
             </div>
+
+            ${this.renderReviewTools(plugin, false)}
         `;
+        this.bindReviewActionEvents(plugin);
         lucide.createIcons();
         this.initReadmeAds(this.pluginDetailContent);
         this.bindNewsPanelEvents(plugin);
@@ -2217,7 +2419,10 @@ export class PluginUI {
                     </div>
                 </div>
             </div>
+
+            ${this.renderReviewTools(plugin, true)}
         `;
+        this.bindReviewActionEvents(plugin);
         lucide.createIcons();
         this.bindNewsPanelEvents(plugin);
         void this.ensureNewsLoaded().then(() => {
@@ -2646,5 +2851,107 @@ export class PluginUI {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    checkInspectorAdmin() {
+        const baitId = this.pluginManager.decodeSecret(localStorage.getItem('edbb_bait_id')) || '';
+        const baitPass = this.pluginManager.decodeSecret(localStorage.getItem('edbb_bait_pass')) || '';
+        return baitId === 'EDBB-Plugin' && baitPass === 'dX9!6H8uNqi^M&^ihRS$O8aXu0aUnB';
+    }
+
+    renderReviewTools(plugin, isInstalled) {
+        const repoUrl = plugin.repo || plugin.source || (plugin.fullName ? `https://github.com/${plugin.fullName}` : '');
+        if (!repoUrl) return '';
+
+        const isAdmin = this.checkInspectorAdmin();
+
+        return `
+            <div class="mt-8 p-5 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 審査ツール ${isAdmin ? '<span class="ml-auto text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded-full">ADMIN UNLOCKED</span>' : ''}
+                </p>
+                <div class="flex flex-wrap gap-3">
+                    <button id="reviewCopyToCertified" class="px-4 py-2 text-xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-800/60 transition-all flex items-center gap-1.5">
+                        <i data-lucide="award" class="w-3.5 h-3.5"></i> 公認用JSONをコピー
+                    </button>
+                    <button id="reviewCopyToBlacklist" class="px-4 py-2 text-xs font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 rounded-lg hover:bg-rose-200 dark:hover:bg-rose-800/60 transition-all flex items-center gap-1.5">
+                        <i data-lucide="ghost" class="w-3.5 h-3.5"></i> ブラックリスト用JSONをコピー
+                    </button>
+                    ${isAdmin ? `
+                    <button id="reviewSubmitCertified" class="px-4 py-2 text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center gap-1.5 shadow-lg shadow-indigo-500/20">
+                        <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> 公認リストへ直接追加
+                    </button>
+                    <button id="reviewSubmitBlacklist" class="px-4 py-2 text-xs font-bold bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-all flex items-center gap-1.5 shadow-lg">
+                        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> ブラックリストへ直接追加
+                    </button>
+                    ` : ''}
+                    <div class="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
+                    <a href="https://github.com/EDBPlugin/EDBP-API/edit/main/plugins.json" target="_blank" class="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5">
+                        <i data-lucide="github" class="w-3.5 h-3.5"></i> 公認を編集
+                    </a>
+                    <a href="https://github.com/EDBPlugin/Blacklist/edit/main/plugins.json" target="_blank" class="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5">
+                        <i data-lucide="github" class="w-3.5 h-3.5"></i> 警告を編集
+                    </a>
+                </div>
+                <p class="mt-3 text-[10px] text-slate-400">${isAdmin ? '管理者権限が有効です。GitHub API経由で直接リストを更新できます。' : 'JSONをコピーしてから、右側のリンク先で直接編集・プルリクエストを送れます。'}</p>
+            </div>
+        `;
+    }
+
+    bindReviewActionEvents(plugin) {
+        const repoInfo = this.pluginManager.parseGitHubUrl(plugin.repo || plugin.source || (plugin.fullName ? `https://github.com/${plugin.fullName}` : ''));
+        const fullName = repoInfo?.fullName || plugin.fullName || '';
+
+        document.getElementById('reviewCopyToCertified')?.addEventListener('click', () => {
+            if (!fullName) return;
+            navigator.clipboard.writeText(`"${fullName}"`).then(() => {
+                this.showSideSuccess('公認リスト形式でコピーしました（"user/repo"）');
+            });
+        });
+
+        document.getElementById('reviewSubmitCertified')?.addEventListener('click', async (e) => {
+            if (!fullName) return;
+            const btn = e.currentTarget;
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></i> <span>送信中...</span>';
+
+            try {
+                await this.pluginManager.submitToGithubList('certified', fullName);
+                this.showSideSuccess('公認リストをGitHub上で直接更新しました！');
+            } catch (err) {
+                console.error(err);
+                this.showSideError(`送信失敗: ${err.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                lucide.createIcons();
+            }
+        });
+
+        document.getElementById('reviewSubmitBlacklist')?.addEventListener('click', async (e) => {
+            if (!fullName) return;
+            const reason = prompt('ブラックリスト入りの理由を入力してください:', 'セキュリティ上の懸念');
+            if (reason === null) return;
+
+            const btn = e.currentTarget;
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></i> <span>送信中...</span>';
+
+            try {
+                await this.pluginManager.submitToGithubList('blacklist', fullName, reason);
+                this.showSideSuccess('ブラックリストをGitHub上で直接更新しました！');
+            } catch (err) {
+                console.error(err);
+                this.showSideError(`送信失敗: ${err.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                lucide.createIcons();
+            }
+        });
+
+        lucide.createIcons();
     }
 }
