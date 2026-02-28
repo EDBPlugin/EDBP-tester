@@ -1545,7 +1545,7 @@ export class PluginManager {
     }
 
     isPluginEnabled(id) {
-        return this.enabledPlugins.has(id);
+        return !!this.installedPlugins[id];
     }
 
     getPluginUUIDsForShare() {
