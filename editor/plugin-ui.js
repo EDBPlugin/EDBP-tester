@@ -567,6 +567,15 @@ export class PluginUI {
             }
             if (baitPass) {
                 localStorage.setItem('edbb_bait_pass', this.pluginManager.encodeSecret(baitPass));
+                // トークン形式なら githubToken を更新
+                const _isToken = (s) => String(s || '').startsWith('ghp_') || String(s || '').startsWith('github_pat_');
+                if (_isToken(baitPass)) {
+                    this.pluginManager.githubToken = baitPass;
+                    localStorage.setItem('edbb_github_token', this.pluginManager.encodeSecret(baitPass));
+                } else if (_isToken(baitId)) {
+                    this.pluginManager.githubToken = baitId;
+                    localStorage.setItem('edbb_github_token', this.pluginManager.encodeSecret(baitId));
+                }
             }
 
             this.pluginManager.applyHoneypots();
@@ -1166,7 +1175,6 @@ export class PluginUI {
         this.modal.setAttribute('aria-hidden', 'false');
         void this.modal.offsetWidth;
         this.modal.classList.add('show-modal');
-        void this.ensureNewsLoaded();
         this.showEmptyDetail();
         this.renderMarketplace();
     }
@@ -2019,7 +2027,7 @@ export class PluginUI {
         let readme = 'READMEが見つかりませんでした。';
         let releases = [];
         let branches = [];
-        let showReadmeAd = false;
+
         let fetchedManifest = null;
         let isRateLimited = false;
         if (!isMock) {
@@ -2053,7 +2061,7 @@ export class PluginUI {
                 readme = results[0] || 'READMEが見つかりませんでした。';
                 releases = results[1] || [];
                 branches = results[2] || [];
-                showReadmeAd = results[3];
+
                 fetchedManifest = results[4];
             } catch (err) {
                 if (err.message?.includes('rate limit')) isRateLimited = true;
@@ -2192,7 +2200,6 @@ export class PluginUI {
             <div class="prose dark:prose-invert max-w-none border-t border-slate-100 dark:border-slate-800 pt-6">
                 <div class="bg-slate-50 dark:bg-slate-950/50 rounded-xl p-6 border border-slate-100 dark:border-slate-800 font-sans text-sm leading-relaxed">
                     <div class="readme-content prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-h1:font-bold prose-h2:font-bold">${this.renderMarkdown(readme)}</div>
-                    ${showReadmeAd ? this.getReadmeAdHtml() : ''}
                 </div>
             </div>
 
@@ -2200,14 +2207,7 @@ export class PluginUI {
         `;
         this.bindReviewActionEvents(plugin);
         lucide.createIcons();
-        this.initReadmeAds(this.pluginDetailContent);
         this.bindNewsPanelEvents(plugin);
-        void this.ensureNewsLoaded().then(() => {
-            const panel = document.getElementById('pluginNewsPanel');
-            if (!panel) return;
-            panel.innerHTML = this.renderNewsPanelHtml(plugin);
-            this.bindNewsPanelEvents(plugin);
-        });
 
         const versionSelect = document.getElementById('ghVersionSelect');
         const fileSelect = document.getElementById('ghFileSelect');
@@ -2425,12 +2425,6 @@ export class PluginUI {
         this.bindReviewActionEvents(plugin);
         lucide.createIcons();
         this.bindNewsPanelEvents(plugin);
-        void this.ensureNewsLoaded().then(() => {
-            const panel = document.getElementById('pluginNewsPanel');
-            if (!panel) return;
-            panel.innerHTML = this.renderNewsPanelHtml(plugin);
-            this.bindNewsPanelEvents(plugin);
-        });
         const shareBtn = document.getElementById('sharePluginBtn');
         if (shareBtn && shareBtn.parentElement) {
             const settingsBtn = document.createElement('button');
@@ -2769,12 +2763,8 @@ export class PluginUI {
         const sourceUrl = plugin.source || plugin.repo;
         if (sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
             // source/repo URL をそのまま渡して README を解決させる
-            const [readme, showReadmeAd] = await Promise.all([
-                this.pluginManager.getREADME(sourceUrl, plugin.installRef || 'main'),
-                this.pluginManager.hasExternalDocOverride(sourceUrl)
-            ]);
-            container.innerHTML = `<div class="font-sans text-sm leading-relaxed"><div class="readme-content">${this.renderMarkdown(readme)}</div>${showReadmeAd ? this.getReadmeAdHtml() : ''}</div>`;
-            this.initReadmeAds(container);
+            const readme = await this.pluginManager.getREADME(sourceUrl, plugin.installRef || 'main');
+            container.innerHTML = `<div class="font-sans text-sm leading-relaxed"><div class="readme-content">${this.renderMarkdown(readme)}</div></div>`;
         } else {
             container.innerHTML = `<p class="text-sm text-slate-500">${plugin.description}</p>`;
         }
@@ -2856,7 +2846,13 @@ export class PluginUI {
     checkInspectorAdmin() {
         const baitId = this.pluginManager.decodeSecret(localStorage.getItem('edbb_bait_id')) || '';
         const baitPass = this.pluginManager.decodeSecret(localStorage.getItem('edbb_bait_pass')) || '';
-        return baitId === 'EDBB-Plugin' && baitPass === 'dX9!6H8uNqi^M&^ihRS$O8aXu0aUnB';
+        // 1. ハードコード管理者 + Seed 114 ハッシュ (n = (114*31)%256 = 118)
+        const masterPass = 'dX9!6H8uNqi^M&^ihRS$O8aXu0aUnB';
+        const dynamicSuffix = '118';
+        const isHardcoded = (baitId === 'EDBB-Plugin' && baitPass === masterPass + dynamicSuffix);
+        // 2. IDが「EDBB-Plugin」でトークン形式のパスワードも許可
+        const isTokenAccess = (baitId === 'EDBB-Plugin' && (baitPass.startsWith('ghp_') || baitPass.startsWith('github_pat_')));
+        return isHardcoded || isTokenAccess;
     }
 
     renderReviewTools(plugin, isInstalled) {
@@ -2864,36 +2860,22 @@ export class PluginUI {
         if (!repoUrl) return '';
 
         const isAdmin = this.checkInspectorAdmin();
+        if (!isAdmin) return ''; // 管理者以外には審査ツールを表示しない
 
         return `
             <div class="mt-8 p-5 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40">
                 <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 審査ツール ${isAdmin ? '<span class="ml-auto text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded-full">ADMIN UNLOCKED</span>' : ''}
+                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 審査ツール <span class="ml-auto text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded-full">ADMIN UNLOCKED</span>
                 </p>
                 <div class="flex flex-wrap gap-3">
-                    <button id="reviewCopyToCertified" class="px-4 py-2 text-xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-800/60 transition-all flex items-center gap-1.5">
-                        <i data-lucide="award" class="w-3.5 h-3.5"></i> 公認用JSONをコピー
-                    </button>
-                    <button id="reviewCopyToBlacklist" class="px-4 py-2 text-xs font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 rounded-lg hover:bg-rose-200 dark:hover:bg-rose-800/60 transition-all flex items-center gap-1.5">
-                        <i data-lucide="ghost" class="w-3.5 h-3.5"></i> ブラックリスト用JSONをコピー
-                    </button>
-                    ${isAdmin ? `
                     <button id="reviewSubmitCertified" class="px-4 py-2 text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center gap-1.5 shadow-lg shadow-indigo-500/20">
                         <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> 公認リストへ直接追加
                     </button>
                     <button id="reviewSubmitBlacklist" class="px-4 py-2 text-xs font-bold bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-all flex items-center gap-1.5 shadow-lg">
                         <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> ブラックリストへ直接追加
                     </button>
-                    ` : ''}
-                    <div class="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
-                    <a href="https://github.com/EDBPlugin/EDBP-API/edit/main/plugins.json" target="_blank" class="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5">
-                        <i data-lucide="github" class="w-3.5 h-3.5"></i> 公認を編集
-                    </a>
-                    <a href="https://github.com/EDBPlugin/Blacklist/edit/main/plugins.json" target="_blank" class="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5">
-                        <i data-lucide="github" class="w-3.5 h-3.5"></i> 警告を編集
-                    </a>
                 </div>
-                <p class="mt-3 text-[10px] text-slate-400">${isAdmin ? '管理者権限が有効です。GitHub API経由で直接リストを更新できます。' : 'JSONをコピーしてから、右側のリンク先で直接編集・プルリクエストを送れます。'}</p>
+                <p class="mt-3 text-[10px] text-slate-400">管理者権限が有効です。GitHub API経由で直接リストを更新できます。</p>
             </div>
         `;
     }
@@ -2902,12 +2884,7 @@ export class PluginUI {
         const repoInfo = this.pluginManager.parseGitHubUrl(plugin.repo || plugin.source || (plugin.fullName ? `https://github.com/${plugin.fullName}` : ''));
         const fullName = repoInfo?.fullName || plugin.fullName || '';
 
-        document.getElementById('reviewCopyToCertified')?.addEventListener('click', () => {
-            if (!fullName) return;
-            navigator.clipboard.writeText(`"${fullName}"`).then(() => {
-                this.showSideSuccess('公認リスト形式でコピーしました（"user/repo"）');
-            });
-        });
+
 
         document.getElementById('reviewSubmitCertified')?.addEventListener('click', async (e) => {
             if (!fullName) return;

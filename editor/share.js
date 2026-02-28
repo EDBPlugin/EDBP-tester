@@ -1,7 +1,7 @@
 // 共有機能全体で使う定数を定義
 const SHARE_QUERY_KEY = 'share';
 const SHARE_STATUS_SHOW_MS = 2500;
-const SHARE_SHORTENER_ENDPOINT = '/share/create';
+
 const SHARE_IMPORT_SKIP_KEY = 'share_import_dialog_skip';
 const SHARE_CANONICAL_ORIGIN = 'https://share.himais0giiiin.com';
 const SHARE_BETA_ORIGIN = 'https://beta-edbb.himaiso.workers.dev';
@@ -665,20 +665,9 @@ class ShareModalController {
       const { encoded, url } = this.exportSharePayload();
       this.toggle(true, url);
 
-      // 127.0.0.1 (ローカル開発環境) の場合は短縮URLの生成をスキップ
+      // 127.0.0.1 (ローカル開発環境) の場合はスキップ
       if (window.location.hostname === '127.0.0.1') {
         return;
-      }
-
-      try {
-        const shortUrl = await this.createShortShareUrl(encoded);
-        if (shortUrl && this.isModalOpen() && this.modalInput) {
-          this.modalInput.value = shortUrl;
-          this.ensureUrlVisible();
-        }
-      } catch (error) {
-        console.error('Failed to create short share url', error);
-        this.statusNotifier?.show('短縮URLの生成に失敗したため通常リンクを表示します', 'error');
       }
     } catch (error) {
       console.error('Failed to generate share url', error);
@@ -711,76 +700,7 @@ class ShareModalController {
     this.statusNotifier?.show('Xのポスト画面を開きました', 'info');
   }
 
-  // 短縮URLを生成する非同期処理
-  async createShortShareUrl(encoded) {
-    const endpoints = this.resolveShortenerEndpoints();
-    let lastError = null;
 
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ share: encoded }),
-        });
-        if (!response.ok) {
-          lastError = new Error(`SHORTENER_HTTP_${response.status}`);
-          continue;
-        }
-        const data = await response.json();
-        if (!data?.url) {
-          lastError = new Error('SHORTENER_RESPONSE_INVALID');
-          continue;
-        }
-        return this.normalizeShortShareUrl(data.url);
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    throw lastError || new Error('SHORTENER_UNAVAILABLE');
-  }
-
-  resolveShortenerEndpoints() {
-    const endpoints = [];
-    const pushUnique = (value) => {
-      if (!value) return;
-      if (!endpoints.includes(value)) {
-        endpoints.push(value);
-      }
-    };
-
-    const sameOriginEndpoint = new URL(SHARE_SHORTENER_ENDPOINT, window.location.origin).toString();
-    pushUnique(sameOriginEndpoint);
-
-    const hostname = window.location.hostname || '';
-    const isBetaHost = /^beta(\.|-)/i.test(hostname);
-    if (isBetaHost) {
-      pushUnique(new URL(SHARE_SHORTENER_ENDPOINT, SHARE_BETA_ORIGIN).toString());
-    }
-
-    pushUnique(new URL(SHARE_SHORTENER_ENDPOINT, SHARE_CANONICAL_ORIGIN).toString());
-    return endpoints;
-  }
-
-  // 短縮URLが期待ドメインになるように整形
-  normalizeShortShareUrl(url) {
-    try {
-      const parsed = new URL(url, window.location.origin);
-      const shareHost = new URL(SHARE_CANONICAL_ORIGIN).hostname;
-      const isHimaisDomain =
-        parsed.hostname === 'himais0giiiin.com' || parsed.hostname.endsWith('.himais0giiiin.com');
-      if (isHimaisDomain && parsed.hostname !== shareHost) {
-        parsed.protocol = 'https:';
-        parsed.hostname = shareHost;
-        return parsed.toString();
-      }
-      return parsed.toString();
-    } catch (error) {
-      console.warn('Failed to normalize short url', error);
-      return url;
-    }
-  }
 
   // テキストのクリップボードコピーを試みる
   async tryCopyToClipboard(text) {
